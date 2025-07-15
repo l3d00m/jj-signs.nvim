@@ -55,7 +55,10 @@ local function cache_annotate(bufnr, filepath, on_done)
   -- Debounce: only allow one annotate job at a time per buffer, or once every 200ms
   if debounce_timers[bufnr] then
     debounce_timers[bufnr]:stop()
-    debounce_timers[bufnr]:close()
+    if not debounce_timers[bufnr]:is_closing() then
+      debounce_timers[bufnr]:close()
+    end
+    debounce_timers[bufnr] = nil
   end
   debounce_timers[bufnr] = vim.defer_fn(function()
     if annotate_cache[bufnr] and annotate_cache[bufnr].loading then
@@ -107,6 +110,18 @@ local function clear_blame_annotations()
   end
 end
 
+local last_line_by_buf = {}
+
+local function on_cursor_moved_vertically()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cur_line = vim.api.nvim_win_get_cursor(0)[1]
+  local last_line = last_line_by_buf[bufnr]
+  if last_line ~= nil and cur_line ~= last_line then
+    clear_blame_annotations()
+  end
+  last_line_by_buf[bufnr] = cur_line
+end
+
 local function show_blame_for_line()
   local bufnr = vim.api.nvim_get_current_buf()
   if not enabled_buffers[bufnr] then return end
@@ -147,28 +162,18 @@ vim.api.nvim_create_autocmd({"BufWritePost", "BufDelete"}, {
     enabled_buffers[args.buf] = nil
     if debounce_timers[args.buf] then
       debounce_timers[args.buf]:stop()
-      debounce_timers[args.buf]:close()
+      if not debounce_timers[args.buf]:is_closing() then
+        debounce_timers[args.buf]:close()
+      end
       debounce_timers[args.buf] = nil
     end
     -- Clear buffer-local autocmds on delete
     if args.event == "BufDelete" then
       pcall(vim.api.nvim_clear_autocmds, { group = JJ_SIGNS_GROUP, buffer = args.buf })
+      last_line_by_buf[args.buf] = nil
     end
   end
 })
-
--- Only clear blame annotations on vertical buffer movement
-local last_line_by_buf = {}
-
-local function on_cursor_moved_vertically()
-  local bufnr = vim.api.nvim_get_current_buf()
-  local cur_line = vim.api.nvim_win_get_cursor(0)[1]
-  local last_line = last_line_by_buf[bufnr]
-  if last_line and cur_line ~= last_line then
-    clear_blame_annotations()
-  end
-  last_line_by_buf[bufnr] = cur_line
-end
 
 local function try_enable_jj_blame(bufnr)
   local filepath = vim.api.nvim_buf_get_name(bufnr)
