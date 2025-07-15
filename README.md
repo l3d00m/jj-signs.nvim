@@ -3,7 +3,10 @@
 > [!WARNING]
 > This has been completely vibecoded (AI) and I'm not a lua expert. Use with a lot of caution and expect bugs.
 
-Neovim blame annotation using [jj](https://github.com/martinvonz/jj).
+Neovim blame annotation using [jj](https://github.com/jj-vcs/jj).
+
+<img width="783" height="112" alt="image" src="https://github.com/user-attachments/assets/7170f65e-8e9f-45d2-8f7d-7f3f6a69bd92" />
+
 
 ## Features
 
