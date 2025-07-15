@@ -32,7 +32,7 @@ local function cache_annotate(bufnr, filepath, on_done)
   local jj_args = {
     "jj", "file", "annotate", filepath,
     "-T",
-    "separate(' ', pad_end(8, truncate_end(30, commit.author().name())) ++ ',', commit_timestamp(commit).local().ago(), '-' , truncate_end(50, commit.description().first_line(), '...'), '(' ++ commit.change_id().shortest(8) ++ ')') ++ \"\\n\""
+    "separate(' ', truncate_end(30, commit.author().name()) ++ ',', commit_timestamp(commit).local().ago(), '-' , truncate_end(50, commit.description().first_line(), '...'), '(' ++ commit.change_id().shortest(8) ++ ')') ++ \"\\n\""
   }
 
   run_jj(jj_args, nil,
