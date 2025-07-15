@@ -5,9 +5,16 @@ local annotate_cache = {}
 local enabled_buffers = {}
 
 -- Generalized jj command runner
-local function run_jj(cmd_args, cwd, on_stdout, on_stderr, on_exit)
+local function run_jj(cmd_args, cwd, repo_path, on_stdout, on_stderr, on_exit)
   local args = vim.deepcopy(cmd_args)
   table.insert(args, 3, "--ignore-working-copy")
+  
+  -- Add --repository argument for all commands except "jj root"
+  if repo_path and cmd_args[2] ~= "root" then
+    table.insert(args, 4, "--repository")
+    table.insert(args, 5, repo_path)
+  end
+  
   vim.fn.jobstart(args, {
     cwd = cwd,
     stdout_buffered = true,
@@ -22,6 +29,24 @@ local function get_file_mtime(filepath)
   return stat and stat.mtime.sec or nil
 end
 
+-- Get repository root for a given file path
+local function get_repo_root(filepath, callback)
+  local dir = vim.fn.fnamemodify(filepath, ":p:h")
+  local repo_root = nil
+  
+  run_jj({"jj", "root"}, dir, nil,
+    function(_, data)
+      if data and data[1] and data[1] ~= "" then
+        repo_root = vim.trim(data[1])
+      end
+    end,
+    nil,
+    function(_, code)
+      callback(code == 0 and repo_root or nil)
+    end
+  )
+end
+
 local function cache_annotate(bufnr, filepath, on_done)
   local mtime = get_file_mtime(filepath)
   if annotate_cache[bufnr] and annotate_cache[bufnr].loading then
@@ -29,33 +54,47 @@ local function cache_annotate(bufnr, filepath, on_done)
   end
   annotate_cache[bufnr] = { loading = true }
 
-  local jj_args = {
-    "jj", "file", "annotate", filepath,
-    "-T",
-    "separate(' ', truncate_end(30, commit.author().name()) ++ ',', commit_timestamp(commit).local().ago(), '-' , truncate_end(50, commit.description().first_line(), '...'), '(' ++ commit.change_id().shortest(8) ++ ')') ++ \"\\n\""
-  }
-
-  run_jj(jj_args, nil,
-    function(_, data)
-      if not data then return end
-      annotate_cache[bufnr] = {
-        mtime = mtime,
-        lines = data,
-        loading = false
-      }
-      if on_done then on_done() end
-    end,
-    function(_, data)
-      if data and data[1] and data[1] ~= "" then
-        vim.api.nvim_echo({{"jj error: " .. table.concat(data, " "), "ErrorMsg"}}, false, {})
-      end
-    end,
-    function(_, code)
-      if code ~= 0 then
-        annotate_cache[bufnr] = nil
-      end
+  get_repo_root(filepath, function(repo_root)
+    if not repo_root then
+      annotate_cache[bufnr] = nil
+      return
     end
-  )
+
+    local jj_args = {
+      "jj", "file", "annotate", filepath,
+      "-T",
+      "separate(' ', truncate_end(30, commit.author().name()) ++ ',', commit_timestamp(commit).local().ago(), '-' , truncate_end(50, commit.description().first_line(), '...'), '(' ++ commit.change_id().shortest(8) ++ ')') ++ \"\\n\""
+    }
+
+    run_jj(jj_args, nil, repo_root,
+      function(_, data)
+        if not data then return end
+        annotate_cache[bufnr] = {
+          mtime = mtime,
+          lines = data,
+          loading = false
+        }
+        if on_done then on_done() end
+      end,
+      function(_, data)
+        if data and data[1] and data[1] ~= "" then
+          vim.api.nvim_echo({{"jj error: " .. table.concat(data, " "), "ErrorMsg"}}, false, {})
+        end
+      end,
+      function(_, code)
+        if code ~= 0 then
+          annotate_cache[bufnr] = nil
+        end
+      end
+    )
+  end)
+end
+
+local function clear_blame_annotations()
+  local bufnr = vim.api.nvim_get_current_buf()
+  if enabled_buffers[bufnr] then
+    vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
+  end
 end
 
 local function show_blame_for_line()
@@ -100,7 +139,7 @@ local function try_enable_jj_blame(bufnr)
   local filepath = vim.api.nvim_buf_get_name(bufnr)
   if filepath == "" then return end
   local dir = vim.fn.fnamemodify(filepath, ":p:h")
-  run_jj({"jj", "root"}, dir,
+  run_jj({"jj", "root"}, dir, nil,
     nil, nil,
     function(_, code)
       if code == 0 then
@@ -111,6 +150,13 @@ local function try_enable_jj_blame(bufnr)
           buffer = bufnr,
           callback = show_blame_for_line,
           desc = "Show jj blame for current line (per buffer)"
+        })
+        
+        -- Register CursorMoved and CursorMovedI autocmds to clear annotations immediately
+        vim.api.nvim_create_autocmd({"CursorMoved", "CursorMovedI"}, {
+          buffer = bufnr,
+          callback = clear_blame_annotations,
+          desc = "Clear jj blame annotations on cursor movement (per buffer)"
         })
       else
         enabled_buffers[bufnr] = false
