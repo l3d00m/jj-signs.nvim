@@ -18,13 +18,7 @@ Neovim blame annotation using [jj](https://github.com/martinvonz/jj).
 
 ## Install
 
-Place this repo in your Neovim runtime, e.g.
-
-```sh
-git clone https://github.com/l3d00m/jj-signs ~/.config/nvim/lua/jj_signs
-```
-
-And add to your plugin loader (for [LazyVim](https://www.lazyvim.org/)):
+Add to your plugin loader (for [LazyVim](https://www.lazyvim.org/)):
 
 ```lua
 {
