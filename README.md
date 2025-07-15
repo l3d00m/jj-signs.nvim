@@ -18,18 +18,21 @@ Neovim blame annotation using [jj](https://github.com/martinvonz/jj).
 
 ## Install
 
-Add to your plugin loader (for [LazyVim](https://www.lazyvim.org/)):
+For [LazyVim](https://www.lazyvim.org/):
 
 ```lua
 {
   "l3d00m/jj-signs.nvim",
+  config = function()
+    require("jj_signs").setup()
+  end,
   lazy = false,
-}
+},
 ```
 
 ## Usage
 
-- Pausing cursor (`CursorHold`) on a line shows blame for that line as virtual text
+- Pausing the cursor on a line shows blame for that line as virtual text
 - `:JjSigns` or `<leader>jb` shows blame on demand
 
 ## Requirements
