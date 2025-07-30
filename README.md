@@ -45,3 +45,43 @@ For [LazyVim](https://www.lazyvim.org/):
   lazy = false,
 },
 ```
+
+### Local Development Setup
+
+To include a local version of this plugin in LazyVim:
+
+```lua
+{
+  dir = "/absolute/path/to/jj-signs.nvim",  -- Use absolute path
+  config = function()
+    require("jj_signs").setup()
+  end,
+  lazy = false,
+},
+```
+
+## Usage
+
+- Pausing the cursor on a line shows blame for that line as virtual text
+- Commands:
+  - `:JjBlame` - Show blame for current line
+  - `:JjBlameToggle` - Toggle blame visibility on/off
+  - `:JjBlameClear` - Clear all blame annotations
+  - `:JjBlameRefresh` - Force refresh the blame cache
+
+- Default keybindings (customizable):
+  - `<leader>jb` - Show blame
+  - `<leader>jt` - Toggle blame
+  - `<leader>jc` - Clear blame
+  - `<leader>jr` - Refresh blame
+
+## Requirements
+
+- [jj](https://github.com/jj-vcs/jj) must be in your `$PATH`
+- Neovim 0.10+ (for `nvim_buf_set_extmark`)
+
+## Performance Considerations
+
+- The plugin includes debouncing to minimize the impact on editor performance
+- Cache is cleared automatically when files are modified
+- For very large repositories, you might want to increase the `delay` setting

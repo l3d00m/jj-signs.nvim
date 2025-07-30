@@ -3,7 +3,7 @@ local config = require("jj_signs.config")
 local utils = require("jj_signs.utils")
 local commands = require("jj_signs.commands")
 
--- Global module state with weak value references for better memory management
+-- Global module state
 local ns = vim.api.nvim_create_namespace("jj_blame")
 local annotate_cache = setmetatable({}, { __mode = "v" })
 local enabled_buffers = setmetatable({}, { __mode = "v" })
@@ -36,9 +36,12 @@ end
 
 -- Check if file has changes and update cache
 local function check_file_changes(bufnr, filepath, callback)
+	utils.debug_print("Checking file changes: " .. filepath)
+
 	-- Get repository root first
 	utils.get_repo_root(filepath, function(repo_root)
 		if not repo_root then
+			utils.debug_print("No repo root found")
 			if callback then
 				callback(false)
 			end
@@ -51,8 +54,10 @@ local function check_file_changes(bufnr, filepath, callback)
 		-- Check if file has uncommitted changes
 		utils.is_file_changed(filepath, repo_root, function(is_changed)
 			if is_changed then
+				utils.debug_print("File has changes, marking: " .. filepath)
 				changed_files[filepath] = true
 			else
+				utils.debug_print("File has no changes, clearing flag: " .. filepath)
 				changed_files[filepath] = nil
 			end
 
@@ -70,25 +75,32 @@ end
 local function show_blame_for_line()
 	local bufnr = vim.api.nvim_get_current_buf()
 	if not enabled_buffers[bufnr] then
+		utils.debug_print("Buffer not enabled for blame")
 		return
 	end
 
 	local filepath = vim.api.nvim_buf_get_name(bufnr)
 	local line = vim.api.nvim_win_get_cursor(0)[1]
+	utils.debug_print("Showing blame for line " .. line .. " in " .. filepath)
 
 	if filepath == "" then
+		utils.debug_print("Empty filepath")
 		vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
 		return
 	end
 
 	-- If the buffer has unsaved changes, clear annotations and don't show blame
 	if vim.bo[bufnr].modified then
+		utils.debug_print("Buffer is modified, not showing blame")
 		vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
 		return
 	end
 
+	utils.debug_print("Changed status: " .. tostring(changed_files[filepath] or "nil"))
+
 	-- If the file has uncommitted changes, show the uncommitted indicator
 	if changed_files[filepath] then
+		utils.debug_print("File has uncommitted changes, showing indicator")
 		vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
 		local user_config = config.get_config()
 		vim.api.nvim_buf_set_extmark(bufnr, ns, line - 1, 0, {
@@ -103,13 +115,17 @@ local function show_blame_for_line()
 	local user_config = config.get_config()
 
 	if cache and cache.mtime == mtime then
+		utils.debug_print("Using cached blame data")
+
 		-- If file is untracked, don't show any blame info
 		if cache.untracked then
+			utils.debug_print("File is untracked, not showing blame")
 			return
 		end
 
 		-- If file has changes since last commit, show a special indicator
 		if cache.changed then
+			utils.debug_print("Cache indicates file is changed")
 			vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
 			vim.api.nvim_buf_set_extmark(bufnr, ns, line - 1, 0, {
 				virt_text = { { "(uncommitted changes)", user_config.uncommitted_highlight_group } },
@@ -118,42 +134,26 @@ local function show_blame_for_line()
 			return
 		end
 
+		utils.debug_print("Showing blame for line " .. line)
 		vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
-
-		-- Get number of lines in current buffer
-		local num_lines = vim.api.nvim_buf_line_count(bufnr)
-
-		-- Check if line is valid and buffer line count matches blame data
-		if line > num_lines then
-			return
-		end
-
-		if num_lines ~= #cache.lines and #cache.lines > 0 then
-			-- Line count mismatch - force refresh
-			utils.cache_annotate(
-				bufnr,
-				filepath,
-				annotate_cache,
-				untracked_files,
-				changed_files,
-				debounce_timers,
-				user_config,
-				show_blame_for_line
-			)
-			return
-		end
 
 		-- Show blame for current line
 		if line <= #cache.lines then
 			local blame_info = cache.lines[line]
 			if blame_info and blame_info ~= "" then
+				utils.debug_print("Setting blame for line " .. line .. ": " .. blame_info)
 				vim.api.nvim_buf_set_extmark(bufnr, ns, line - 1, 0, {
 					virt_text = { { blame_info, user_config.highlight_group } },
 					virt_text_pos = "eol",
 				})
+			else
+				utils.debug_print("No blame info for line " .. line)
 			end
+		else
+			utils.debug_print("Line " .. line .. " is beyond blame data length (" .. #cache.lines .. ")")
 		end
 	else
+		utils.debug_print("No cache hit, getting fresh blame data")
 		utils.cache_annotate(
 			bufnr,
 			filepath,
@@ -169,6 +169,7 @@ end
 
 -- Clean up resources associated with a buffer
 local function cleanup_buffer(bufnr)
+	utils.debug_print("Cleaning up buffer " .. bufnr)
 	enabled_buffers[bufnr] = nil
 	if debounce_timers[bufnr] then
 		debounce_timers[bufnr]:stop()
@@ -189,8 +190,10 @@ local function try_enable_jj_blame(bufnr)
 		return
 	end
 	local dir = vim.fn.fnamemodify(filepath, ":p:h")
+	utils.debug_print("Checking if file is in jj repo: " .. filepath)
 	utils.run_jj({ "root" }, dir, nil, nil, nil, function(_, code)
 		if code == 0 then
+			utils.debug_print("File is in jj repo, enabling blame")
 			enabled_buffers[bufnr] = true
 
 			-- Check if file has uncommitted changes on load
@@ -211,6 +214,7 @@ local function try_enable_jj_blame(bufnr)
 				desc = "Clear jj blame annotations on vertical movement (per buffer)",
 			})
 		else
+			utils.debug_print("File is not in jj repo")
 			enabled_buffers[bufnr] = false
 		end
 	end)
@@ -225,6 +229,7 @@ local function setup_autocommands()
 			local filepath = vim.api.nvim_buf_get_name(args.buf)
 
 			if args.event == "BufWritePost" then
+				utils.debug_print("BufWritePost for " .. filepath)
 				-- After saving, invalidate cache and check if the file has uncommitted changes
 				annotate_cache[args.buf] = nil
 
@@ -233,8 +238,10 @@ local function setup_autocommands()
 					-- Schedule the check slightly after save to allow jj to recognize changes
 					vim.defer_fn(function()
 						if vim.api.nvim_buf_is_valid(bufnr) then
+							utils.debug_print("Re-checking file changes after save")
 							check_file_changes(bufnr, filepath, function(has_changes)
 								if vim.api.nvim_buf_is_valid(bufnr) then
+									utils.debug_print("Post-save check result: " .. tostring(has_changes))
 									show_blame_for_line()
 								end
 							end)
@@ -244,6 +251,7 @@ local function setup_autocommands()
 			end
 
 			if args.event == "BufDelete" then
+				utils.debug_print("BufDelete for " .. filepath)
 				cleanup_buffer(args.buf)
 				changed_files[filepath] = nil
 				untracked_files[filepath] = nil
@@ -257,6 +265,7 @@ local function setup_autocommands()
 		callback = function(args)
 			local bufnr = args.buf
 			if enabled_buffers[bufnr] then
+				utils.debug_print("Text changed, clearing blame")
 				vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
 			end
 		end,
@@ -273,6 +282,8 @@ end
 
 -- Main setup function
 function M.setup(opts)
+	utils.debug_print("Setting up jj-signs plugin")
+
 	-- Initialize configuration
 	config.setup(opts)
 
@@ -281,6 +292,20 @@ function M.setup(opts)
 
 	-- Set up autocommands
 	setup_autocommands()
+
+	-- Add command to manually check a file's changed status
+	vim.api.nvim_create_user_command("JjCheckChanges", function()
+		local bufnr = vim.api.nvim_get_current_buf()
+		local filepath = vim.api.nvim_buf_get_name(bufnr)
+		if enabled_buffers[bufnr] then
+			utils.debug_print("Manually checking file changes: " .. filepath)
+			check_file_changes(bufnr, filepath, function(has_changes)
+				utils.debug_print("Manual check result: " .. tostring(has_changes))
+				annotate_cache[bufnr] = nil -- Force refresh
+				show_blame_for_line()
+			end)
+		end
+	end, {})
 end
 
 return M

@@ -1,8 +1,8 @@
 local M = {}
 
--- Debug function (commented out for production, uncomment for debugging)
+-- Debug function (enable for diagnosing issues)
 function M.debug_print(msg)
-	-- vim.api.nvim_echo({{"JJ-SIGNS-DEBUG: " .. msg, "WarningMsg"}}, false, {})
+	-- vim.api.nvim_echo({ { "JJ-SIGNS-DEBUG: " .. msg, "WarningMsg" } }, false, {})
 end
 
 -- Generalized jj command runner: always prepends "jj"
@@ -14,7 +14,7 @@ function M.run_jj(cmd_args, cwd, repo_path, on_stdout, on_stderr, on_exit)
 	end
 
 	-- Don't add --ignore-working-copy for certain commands where we need to see changes
-	if cmd_args[1] ~= "diff" then
+	if cmd_args[1] ~= "status" then
 		table.insert(args, 3, "--ignore-working-copy")
 	end
 
@@ -24,7 +24,7 @@ function M.run_jj(cmd_args, cwd, repo_path, on_stdout, on_stderr, on_exit)
 		table.insert(args, 5, repo_path)
 	end
 
-	-- M.debug_print("Running command: " .. table.concat(args, " "))
+	M.debug_print("Running command: " .. table.concat(args, " "))
 
 	local ok, job_id = pcall(vim.fn.jobstart, args, {
 		cwd = cwd,
@@ -57,7 +57,7 @@ function M.get_repo_root(filepath, callback)
 		function(_, data)
 			if data and data[1] and data[1] ~= "" then
 				repo_root = vim.trim(data[1])
-				-- M.debug_print("Found repo root: " .. repo_root)
+				M.debug_print("Found repo root: " .. repo_root)
 			end
 		end,
 		nil,
@@ -67,37 +67,34 @@ function M.get_repo_root(filepath, callback)
 	)
 end
 
--- Check if a file has been changed since last commit
+-- Simple file change detection
 function M.is_file_changed(filepath, repo_root, callback)
-	-- Use diff to check if file has changes
-	local relpath = vim.fn.fnamemodify(filepath, ":~:.")
-	local jj_args = { "diff", "--git", relpath }
+	-- Get basename for checking in status output
+	local basename = vim.fn.fnamemodify(filepath, ":t")
+
+	-- Run jj status to see if file has changes
+	local jj_args = { "status" }
+	local output = {}
 	local has_changes = false
 
-	M.run_jj(jj_args, nil, repo_root, function(_, data)
-		if data and #data > 0 then
-			-- If diff has any output, the file has changes
+	M.run_jj(jj_args, repo_root, nil, function(_, data)
+		if data then
 			for _, line in ipairs(data) do
-				if line ~= "" then
+				output[#output + 1] = line
+				-- Check if file basename appears in the output with a change marker
+				if string.match(line, "[MAR!+] .*" .. vim.fn.escape(basename, "().-+*?[]^$")) then
 					has_changes = true
-					-- M.debug_print("File has changes (diff output): " .. filepath)
-					break
+					M.debug_print("Found file in status output: " .. line)
 				end
 			end
 		end
-	end, function(_, data)
-		if data and #data > 0 then
-			-- M.debug_print("Diff stderr: " .. vim.inspect(data))
+	end, function(_, stderr)
+		if stderr and #stderr > 0 then
+			M.debug_print("Status stderr: " .. vim.inspect(stderr))
 		end
 	end, function(_, code)
-		-- Exit code 0 = success, regardless of whether there were changes
-		if code == 0 then
-		-- M.debug_print("File " .. (has_changes and "has" or "does not have") .. " changes: " .. filepath)
-		else
-			-- M.debug_print("Diff command failed with code " .. code .. " for " .. filepath)
-			-- If diff fails, assume no changes to be safe
-			has_changes = false
-		end
+		M.debug_print("Status exit code: " .. code)
+		M.debug_print("Status output: " .. vim.inspect(output))
 		callback(has_changes)
 	end)
 end
@@ -114,7 +111,7 @@ function M.cache_annotate(
 	on_done
 )
 	local mtime = M.get_file_mtime(filepath)
-	-- M.debug_print("Starting cache_annotate for " .. filepath)
+	M.debug_print("Starting cache_annotate for " .. filepath)
 
 	-- Debounce logic
 	if debounce_timers[bufnr] then
@@ -127,15 +124,14 @@ function M.cache_annotate(
 
 	debounce_timers[bufnr] = vim.defer_fn(function()
 		if annotate_cache[bufnr] and annotate_cache[bufnr].loading then
-			-- M.debug_print("Already loading annotations, skipping")
+			M.debug_print("Already loading annotations, skipping")
 			return
 		end
 		annotate_cache[bufnr] = { loading = true }
-		-- M.debug_print("Checking annotations for " .. filepath)
 
 		M.get_repo_root(filepath, function(repo_root)
 			if not repo_root then
-				-- M.debug_print("No repo root found, clearing cache")
+				M.debug_print("No repo root found, clearing cache")
 				annotate_cache[bufnr] = nil
 				return
 			end
@@ -143,7 +139,7 @@ function M.cache_annotate(
 			-- Check if file has uncommitted changes
 			M.is_file_changed(filepath, repo_root, function(is_changed)
 				if is_changed and config.warn_on_changed_files then
-					-- M.debug_print("File has changes, marking in cache: " .. filepath)
+					M.debug_print("File has changes, marking in cache: " .. filepath)
 					changed_files[filepath] = true
 					annotate_cache[bufnr] = {
 						mtime = mtime,
@@ -158,7 +154,7 @@ function M.cache_annotate(
 				end
 
 				-- If file is not changed, clear the changed flag
-				-- M.debug_print("File has no changes, clearing flag: " .. filepath)
+				M.debug_print("File has no changes, clearing flag: " .. filepath)
 				changed_files[filepath] = nil
 
 				-- Run the annotate command
@@ -172,11 +168,11 @@ function M.cache_annotate(
 
 				M.run_jj(jj_args, nil, repo_root, function(_, data)
 					if not data then
-						-- M.debug_print("No data returned from annotate command")
+						M.debug_print("No data returned from annotate command")
 						return
 					end
 
-					-- M.debug_print("Got blame data: " .. #data .. " lines for " .. filepath)
+					M.debug_print("Got blame data: " .. #data .. " lines for " .. filepath)
 
 					annotate_cache[bufnr] = {
 						mtime = mtime,
@@ -188,7 +184,7 @@ function M.cache_annotate(
 					end
 				end, function(_, data)
 					if data and data[1] and data[1] ~= "" then
-						-- M.debug_print("Error from annotate command: " .. data[1])
+						M.debug_print("Error from annotate command: " .. data[1])
 						-- Check for "No such path" error specifically
 						if data[1]:match("No such path") then
 							untracked_files[filepath] = true
@@ -203,7 +199,7 @@ function M.cache_annotate(
 						end
 					end
 				end, function(_, code)
-					-- M.debug_print("Annotate command exited with code: " .. code)
+					M.debug_print("Annotate command exited with code: " .. code)
 					if
 						code ~= 0
 						and not (
