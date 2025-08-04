@@ -3,7 +3,10 @@
 Neovim blame annotation using [jj](https://github.com/jj-vcs/jj).
 
 > [!WARNING]
-> This has been completely vibecoded (AI) and I'm not a lua expert. Use with a lot of caution and expect bugs.
+> This has been mostly vibecoded (AI) and I'm not a lua expert. Use with a lot of caution and expect bugs.
+
+> [!WARNING]
+> This regularly calls jj, which "commits" the changes to your current commit. This might be unwanted. It also does not work properly with `snapshot.auto-track` disabled.
 
 <img width="783" height="112" alt="image" src="https://github.com/user-attachments/assets/7170f65e-8e9f-45d2-8f7d-7f3f6a69bd92" />
 
@@ -29,15 +32,11 @@ For [LazyVim](https://www.lazyvim.org/):
       -- Optional configuration (defaults shown)
       blame_format = "separate(' ', truncate_end(30, commit.author().name()) ++ ',', commit_timestamp(commit).local().ago(), '-' , truncate_end(50, commit.description().first_line(), '...'), '(' ++ commit.change_id().shortest(8) ++ ')') ++ \"\\n\"",
       highlight_group = "Comment",
-      uncommitted_highlight_group = "WarningMsg",
       delay = 200,
-      skip_untracked = true,
-      warn_on_changed_files = true,
       mappings = {
         enable = true,
         blame = '<leader>jb',
         toggle = '<leader>jt',
-        clear = '<leader>jc',
         refresh = '<leader>jr'
       }
     })
@@ -66,13 +65,11 @@ To include a local version of this plugin in LazyVim:
 - Commands:
   - `:JjBlame` - Show blame for current line
   - `:JjBlameToggle` - Toggle blame visibility on/off
-  - `:JjBlameClear` - Clear all blame annotations
   - `:JjBlameRefresh` - Force refresh the blame cache
 
 - Default keybindings (customizable):
   - `<leader>jb` - Show blame
   - `<leader>jt` - Toggle blame
-  - `<leader>jc` - Clear blame
   - `<leader>jr` - Refresh blame
 
 ## Requirements
