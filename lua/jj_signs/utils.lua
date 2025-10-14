@@ -2,7 +2,7 @@ local M = {}
 
 -- Debug function (enable for diagnosing issues)
 function M.debug_print(msg)
-	vim.api.nvim_echo({ { "JJ-SIGNS-DEBUG: " .. msg, "WarningMsg" } }, false, {})
+	-- vim.api.nvim_echo({ { "JJ-SIGNS-DEBUG: " .. msg, "WarningMsg" } }, false, {})
 end
 
 -- Generalized jj command runner: always prepends "jj"
